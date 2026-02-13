@@ -1,39 +1,37 @@
-
 import streamlit as st
 import google.generativeai as genai
-import pandas as pd
-import time
-from datetime import datetime
-import base64
 
-# --- CONFIGURATION & STYLING ---
-st.set_page_config(page_title="บ้านหอมชาพะเยา - Smart Queue", layout="wide", page_icon="🍵")
+# ใช้ API Key จาก Secrets (ตั้งค่าในหน้า Streamlit Cloud)
+API_KEY = st.secrets.get("API_KEY", "ใส่_KEY_ตรงนี้_ถ้าไม่ได้ตั้ง_Secrets")
 
-# Custom Emerald Theme Styling
-st.markdown("""
-    <style>
-    @import url('https://fonts.googleapis.com/css2?family=Anuphan:wght@100;400;700&display=swap');
-    
-    html, body, [class*="css"] {
-        font-family: 'Anuphan', sans-serif;
-    }
-    
-    .main {
-        background-color: #f0fdf4;
-    }
-    
-    .stButton>button {
-        width: 100%;
-        border-radius: 15px;
-        font-weight: bold;
-        transition: all 0.3s;
-    }
-    
-    .stButton>button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-    }
-    
+st.set_page_config(page_title="Gemini AI Assistant", page_icon="🤖")
+st.title("🤖 ผู้ช่วยอัจฉริยะ Gemini")
+
+if API_KEY:
+    genai.configure(api_key=API_KEY)
+    model = genai.GenerativeModel('gemini-1.5-flash')
+
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
+
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+
+    if prompt := st.chat_input("พิมพ์คำถามของคุณ..."):
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
+
+        with st.chat_message("assistant"):
+            try:
+                response = model.generate_content(prompt)
+                st.markdown(response.text)
+                st.session_state.messages.append({"role": "assistant", "content": response.text})
+            except Exception as e:
+                st.error(f"เกิดข้อผิดพลาด: {e}")
+else:
+    st.error("กรุณาตั้งค่า API_KEY ในหน้า Secrets ของ Streamlit ก่อนครับ")
     .merchant-card {
         background-color: white;
         padding: 2rem;
