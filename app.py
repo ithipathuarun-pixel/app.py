@@ -1,39 +1,52 @@
 import streamlit as st
 import google.generativeai as genai
 
-# ใช้ API Key จาก Secrets (ตั้งค่าในหน้า Streamlit Cloud)
-API_KEY = st.secrets.get("API_KEY", "ใส่_KEY_ตรงนี้_ถ้าไม่ได้ตั้ง_Secrets")
+# --- ตั้งค่าพื้นฐาน ---
+st.set_page_config(page_title="บ้านหอมชาพะเยา x Gemini", layout="wide")
 
-st.set_page_config(page_title="Gemini AI Assistant", page_icon="🤖")
-st.title("🤖 ผู้ช่วยอัจฉริยะ Gemini")
+# --- CSS แบบปลอดภัย (กัน Error) ---
+st.markdown("""
+    <style>
+    .main { background-color: #f0fdf4; }
+    h1 { color: #064e3b; }
+    </style>
+    """, unsafe_allow_html=True)
 
-if API_KEY:
-    genai.configure(api_key=API_KEY)
-    model = genai.GenerativeModel('gemini-1.5-flash')
+# --- ดึง API KEY จาก SECRETS ---
+# (อย่าลืมไปใส่ใน Settings > Secrets ของ Streamlit Cloud นะครับ)
+API_KEY = st.secrets.get("API_KEY", "")
 
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
+# --- หน้าตาแอป ---
+st.title("🍵 บ้านหอมชาพะเยา x Gemini AI")
 
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+tab1, tab2 = st.tabs(["🤖 คุยกับ AI", "📋 ระบบร้าน (Coming Soon)"])
 
-    if prompt := st.chat_input("พิมพ์คำถามของคุณ..."):
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
+with tab1:
+    if not API_KEY:
+        st.error("กรุณาตั้งค่า API_KEY ใน Secrets ก่อนใช้งานครับ")
+    else:
+        genai.configure(api_key=API_KEY)
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        
+        if "messages" not in st.session_state:
+            st.session_state.messages = []
 
-        with st.chat_message("assistant"):
-            try:
+        for msg in st.session_state.messages:
+            with st.chat_message(msg["role"]):
+                st.write(msg["content"])
+
+        if prompt := st.chat_input("สอบถามเมนูชาได้เลย..."):
+            st.session_state.messages.append({"role": "user", "content": prompt})
+            with st.chat_message("user"):
+                st.write(prompt)
+            
+            with st.chat_message("assistant"):
                 response = model.generate_content(prompt)
-                st.markdown(response.text)
+                st.write(response.text)
                 st.session_state.messages.append({"role": "assistant", "content": response.text})
-            except Exception as e:
-                st.error(f"เกิดข้อผิดพลาด: {e}")
-else:
-    st.error("กรุณาตั้งค่า API_KEY ในหน้า Secrets ของ Streamlit ก่อนครับ")
-    .merchant-card {
-        background-color: white;
+
+with tab2:
+    st.info("ระบบจัดการคิวร้านบ้านหอมชาพะเยา กำลังถูกปรับปรุงให้รองรับ AI ครับ")
         padding: 2rem;
         border-radius: 2rem;
         box-shadow: 0 10px 25px rgba(0,0,0,0.05);
