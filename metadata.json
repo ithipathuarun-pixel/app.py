@@ -1,6 +1,6 @@
 {
-  "name": "Copy of บ้านหอมชาพะเยา - Smart Queue & Ordering",
-  "description": "A sophisticated queue management and food ordering system for บ้านหอมชาพะเยา restaurant, featuring real-time merchant notifications and customer queue tracking.",
+  "name": "บ้านหอมชาพะเยา - Python Streamlit Version",
+  "description": "Smart Queue & Ordering System converted to Python/Streamlit.",
   "requestFramePermissions": [
     "microphone"
   ]
