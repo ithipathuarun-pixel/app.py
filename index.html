@@ -4,35 +4,261 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>บ้านหอมชาพะเยา - ระบบจองคิวและสั่งอาหาร</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@100;400;700&family=Sarabun:wght@300;400;600;700&display=swap" rel="stylesheet">
-    <style>
-        body {
-            font-family: 'Anuphan', 'Sarabun', sans-serif;
-            background-color: #f0fdf4;
-        }
-        .scrollbar-hide::-webkit-scrollbar {
-            display: none;
-        }
-        .scrollbar-hide {
-            -ms-overflow-style: none;
-            scrollbar-width: none;
-        }
-    </style>
-<script type="importmap">
-{
-  "imports": {
-    "react/": "https://esm.sh/react@^19.2.4/",
-    "react": "https://esm.sh/react@^19.2.4",
-    "@google/genai": "https://esm.sh/@google/genai@^1.41.0",
-    "lucide-react": "https://esm.sh/lucide-react@^0.563.0",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.4/"
-  }
-}
-</script>
+    <title>บ้านหอมชาพะเยา - Smart Queue (Python)</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@stlite/mountable@0.58.1/build/stlite.css" />
 </head>
 <body>
     <div id="root"></div>
+    <script src="https://cdn.jsdelivr.net/npm/@stlite/mountable@0.58.1/build/stlite.js"></script>
+    <script>
+        stlite.mount({
+            requirements: ["google-generativeai", "pandas"],
+            entrypoint: "app.py",
+            historyType: "hash", // CRITICAL: Fixes pushState error in sandboxed environments
+            files: {
+                "app.py": `
+import streamlit as st
+import google.generativeai as genai
+import os
+import time
+from datetime import datetime
+
+# --- CONFIGURATION ---
+st.set_page_config(page_title="บ้านหอมชาพะเยา - Smart Queue", layout="wide", page_icon="🍵")
+
+# Custom CSS for Emerald Theme
+st.markdown("""
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Anuphan:wght@100;400;700&display=swap');
+    
+    html, body, [class*="css"] {
+        font-family: 'Anuphan', sans-serif;
+        background-color: #f0fdf4;
+    }
+    
+    .stApp {
+        background-color: #f0fdf4;
+    }
+
+    .main-title {
+        color: #064e3b;
+        font-weight: 900;
+        font-size: 2.5rem;
+        letter-spacing: -1.5px;
+        margin-bottom: 10px;
+    }
+
+    .card {
+        background: white;
+        padding: 20px;
+        border-radius: 25px;
+        box-shadow: 0 10px 20px rgba(6, 78, 59, 0.04);
+        border: 1px solid #ecfdf5;
+        margin-bottom: 15px;
+        transition: transform 0.2s;
+    }
+    
+    .card:hover {
+        transform: translateY(-3px);
+    }
+
+    .price-tag {
+        background-color: #065f46;
+        color: white;
+        padding: 4px 12px;
+        border-radius: 10px;
+        font-weight: bold;
+    }
+
+    .queue-number {
+        font-size: 3.5rem;
+        font-weight: 900;
+        color: #059669;
+        text-align: center;
+        line-height: 1;
+    }
+
+    .status-badge {
+        padding: 2px 8px;
+        border-radius: 8px;
+        font-size: 0.8rem;
+        font-weight: bold;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+# --- SESSION STATE INITIALIZATION ---
+if 'menu' not in st.session_state:
+    st.session_state.menu = [
+        {"id": "d1", "name": "ชาไทยเย็น สูตรพะเยา", "price": 45, "cat": "drink", "desc": "หอมเข้มข้น หวานมันกำลังดี"},
+        {"id": "f2", "name": "ก๋วยเตี๋ยวเรือเนื้อวากิว", "price": 120, "cat": "food", "desc": "น้ำตกเข้มข้น เนื้อวากิวพรีเมียม"},
+        {"id": "f3", "name": "น้ำพริกหนุ่ม ผักลวก", "price": 65, "cat": "food", "desc": "สูตรเมืองพะเยาแท้"},
+        {"id": "d2", "name": "อัญชันมะนาวน้ำผึ้ง", "price": 40, "cat": "drink", "desc": "น้ำผึ้งแท้เดือนห้า"}
+    ]
+
+if 'orders' not in st.session_state:
+    st.session_state.orders = []
+
+if 'cart' not in st.session_state:
+    st.session_state.cart = []
+
+if 'next_q' not in st.session_state:
+    st.session_state.next_q = 1
+
+if 'ai_history' not in st.session_state:
+    st.session_state.ai_history = []
+
+# --- GEMINI AI INTEGRATION ---
+def get_ai_response(prompt):
+    api_key = os.environ.get("API_KEY", "")
+    if not api_key:
+        return "ขออภัยครับ ไม่พบ API KEY ในระบบ กรุณาตรวจสอบการตั้งค่า"
+    
+    try:
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel('gemini-3-flash-preview')
+        context = f"คุณคือพนักงานร้าน บ้านหอมชาพะเยา รายการเมนู: {st.session_state.menu}. ตอบคำถามลูกค้าอย่างสุภาพ"
+        response = model.generate_content(f"{context}\\nลูกค้าถามว่า: {prompt}")
+        return response.text
+    except Exception as e:
+        return f"ขออภัยครับ ระบบ AI ขัดข้อง: {str(e)}"
+
+# --- SIDEBAR NAVIGATION ---
+with st.sidebar:
+    st.markdown("<h2 style='color:#064e3b;'>🍵 บ้านหอมชา</h2>", unsafe_allow_html=True)
+    mode = st.radio("เมนูใช้งาน", ["🛒 สั่งอาหาร", "📋 เช็คคิว", "🤖 ถาม AI", "⚙️ หลังร้าน"])
+    
+    if mode == "⚙️ หลังร้าน":
+        pwd = st.text_input("รหัสผ่าน", type="password")
+        if pwd != "907264":
+            st.warning("ใส่รหัส 907264 เพื่อเข้าใช้งานโหมดหลังร้าน")
+            mode = "🛒 สั่งอาหาร" # Fallback if not authorized
+
+    st.divider()
+    if st.button("🔄 เริ่มต้นใหม่ (Reset)"):
+        st.session_state.orders = []
+        st.session_state.next_q = 1
+        st.session_state.cart = []
+        st.rerun()
+
+# --- MAIN LOGIC ---
+if mode == "🛒 สั่งอาหาร":
+    st.markdown("<h1 class='main-title'>บ้านหอมชาพะเยา</h1>", unsafe_allow_html=True)
+    c_m, c_c = st.columns([2, 1])
+    
+    with c_m:
+        st.subheader("📋 เมนูแนะนำ")
+        cols = st.columns(2)
+        for i, it in enumerate(st.session_state.menu):
+            with cols[i%2]:
+                st.markdown(f"<div class='card'><h4>{it['name']}</h4><p style='color:gray; font-size:0.8rem;'>{it['desc']}</p><span class='price-tag'>฿{it['price']}</span></div>", unsafe_allow_html=True)
+                if st.button(f"เลือก {it['name']}", key=f"b_{it['id']}"):
+                    st.session_state.cart.append(it)
+                    st.toast(f"เพิ่ม {it['name']} แล้ว")
+    
+    with c_c:
+        st.subheader("🧺 ตะกร้าของคุณ")
+        if not st.session_state.cart:
+            st.info("ยังไม่มีรายการในตะกร้า")
+        else:
+            total = sum(i['price'] for i in st.session_state.cart)
+            for idx, i in enumerate(st.session_state.cart):
+                col_i, col_d = st.columns([4, 1])
+                col_i.write(f"{i['name']} - {i['price']}.-")
+                if col_d.button("🗑️", key=f"del_{idx}"):
+                    st.session_state.cart.pop(idx)
+                    st.rerun()
+            st.markdown(f"### รวมทั้งสิ้น: ฿{total}")
+            name = st.text_input("ชื่อลูกค้า (สำหรับเรียกคิว)")
+            if st.button("🚀 ยืนยันสั่งซื้อ"):
+                if name and st.session_state.cart:
+                    q = f"A{str(st.session_state.next_q).zfill(3)}"
+                    st.session_state.orders.append({
+                        "id": time.time(),
+                        "q": q,
+                        "name": name,
+                        "items": st.session_state.cart.copy(),
+                        "total": total,
+                        "status": "PENDING",
+                        "time": datetime.now().strftime("%H:%M")
+                    })
+                    st.session_state.next_q += 1
+                    st.session_state.cart = []
+                    st.success(f"สั่งซื้อสำเร็จ! คิวของคุณคือ {q}")
+                    time.sleep(1)
+                    st.rerun()
+                else:
+                    st.error("กรุณาระบุชื่อและเลือกอาหาร")
+
+elif mode == "📋 เช็คคิว":
+    st.markdown("<h1 class='main-title'>สถานะคิว</h1>", unsafe_allow_html=True)
+    ready = [o for o in st.session_state.orders if o['status'] == "READY"]
+    prep = [o for o in st.session_state.orders if o['status'] in ["PENDING", "PREPARING"]]
+    cancelled = [o for o in st.session_state.orders if o['status'] == "CANCEL"]
+    
+    c1, c2 = st.columns(2)
+    with c1:
+        st.success("✅ พร้อมรับ (Ready)")
+        if not ready: st.write("-")
+        for o in ready: 
+            st.markdown(f"<div class='card'><div class='queue-number'>{o['q']}</div><p style='text-align:center;'>คุณ {o['name']}</p></div>", unsafe_allow_html=True)
+            
+    with c2:
+        st.info("⏳ กำลังเตรียม (Preparing)")
+        if not prep: st.write("-")
+        for o in prep: 
+            st.markdown(f"<div class='card' style='text-align:center;'><h3>{o['q']}</h3><small>คุณ {o['name']}</small></div>", unsafe_allow_html=True)
+    
+    if cancelled:
+        st.divider()
+        st.error("❌ ออร์เดอร์ที่ต้องขออภัย (Cancelled)")
+        for o in cancelled:
+            st.warning(f"คิว {o['q']} (คุณ {o['name']}): ทางร้านต้องขออภัยที่ไม่สามารถรับออร์เดอร์ได้ในขณะนี้")
+
+elif mode == "🤖 ถาม AI":
+    st.markdown("<h1 class='main-title'>ผู้ช่วย AI อัจฉริยะ</h1>", unsafe_allow_html=True)
+    for m in st.session_state.ai_history:
+        with st.chat_message("user" if m["r"]=="user" else "assistant"):
+            st.write(m["c"])
+            
+    if q := st.chat_input("สอบถามข้อมูลร้านหรือเมนู..."):
+        st.session_state.ai_history.append({"r":"user","c":q})
+        with st.chat_message("user"): st.write(q)
+        with st.chat_message("assistant"):
+            with st.spinner("กำลังคิด..."):
+                response = get_ai_response(q)
+                st.write(response)
+                st.session_state.ai_history.append({"r":"ai","c":response})
+
+elif mode == "⚙️ หลังร้าน":
+    st.markdown("<h1 class='main-title'>ระบบจัดการออร์เดอร์</h1>", unsafe_allow_html=True)
+    active = [o for o in st.session_state.orders if o['status'] not in ["DONE", "CANCEL"]]
+    
+    if not active:
+        st.info("ยังไม่มีออร์เดอร์ใหม่")
+    
+    for o in active:
+        with st.container():
+            st.markdown(f"<div class='card'><b>{o['q']} - คุณ {o['name']}</b> (฿{o['total']}) <br/><small>{o['time']}</small></div>", unsafe_allow_html=True)
+            cc = st.columns(4)
+            if o['status'] == "PENDING" and cc[0].button("รับออร์เดอร์", key=f"ac_{o['q']}"): 
+                o['status']="PREPARING"
+                st.rerun()
+            if o['status'] == "PREPARING" and cc[0].button("แจ้งพร้อมเสิร์ฟ", key=f"rd_{o['q']}"): 
+                o['status']="READY"
+                st.rerun()
+            if o['status'] == "READY" and cc[0].button("ส่งมอบเรียบร้อย", key=f"dn_{o['q']}"): 
+                o['status']="DONE"
+                st.rerun()
+            if cc[1].button("❌ ปฏิเสธ/ขออภัย", key=f"cl_{o['q']}"): 
+                o['status']="CANCEL"
+                st.rerun()
+`
+            },
+            env: {
+                API_KEY: "process.env.API_KEY"
+            }
+        }, document.getElementById("root"))
+    </script>
 </body>
 </html>
